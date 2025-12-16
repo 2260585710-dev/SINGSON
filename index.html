@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- 引入 A-Frame (3D引擎) -->
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <!-- 引入 MindAR (AR识别库) -->
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
+
+    <!-- 手势控制组件逻辑 -->
+    <script>
+      // 注册手势检测组件
+      AFRAME.registerComponent('gesture-handler', {
+        schema: {
+          enabled: { default: true },
+          rotationFactor: { default: 5 },
+          minScale: { default: 0.3 },
+          maxScale: { default: 8 },
+        },
+        init: function () {
+          this.handleScale = this.handleScale.bind(this);
+          this.handleRotation = this.handleRotation.bind(this);
+          this.isVisible = false;
+          this.initialScale = this.el.object3D.scale.clone();
+          this.scaleFactor = 1;
+
+          this.el.sceneEl.addEventListener("markerFound", (e) => {
+            this.isVisible = true;
+          });
+          this.el.sceneEl.addEventListener("markerLost", (e) => {
+            this.isVisible = false;
+          });
+        },
+        update: function () {
+          if (this.data.enabled) {
+            this.el.sceneEl.addEventListener("onefingermove", this.handleRotation);
+            this.el.sceneEl.addEventListener("twofingermove", this.handleScale);
+          } else {
+            this.el.sceneEl.removeEventListener("onefingermove", this.handleRotation);
+            this.el.sceneEl.removeEventListener("twofingermove", this.handleScale);
+          }
+        },
+        handleRotation: function (event) {
+          if (this.isVisible) {
+            this.el.object3D.rotation.y +=
+              event.detail.positionChange.x * this.data.rotationFactor;
+            this.el.object3D.rotation.x +=
+              event.detail.positionChange.y * this.data.rotationFactor;
+          }
+        },
+        handleScale: function (event) {
+          if (this.isVisible) {
+            this.scaleFactor *=
+              1 + event.detail.spreadChange / event.detail.startSpread;
+            this.scaleFactor = Math.min(
+              Math.max(this.scaleFactor, this.data.minScale),
+              this.data.maxScale
+            );
+            this.el.object3D.scale.x = this.scaleFactor * this.initialScale.x;
+            this.el.object3D.scale.y = this.scaleFactor * this.initialScale.y;
+            this.el.object3D.scale.z = this.scaleFactor * this.initialScale.z;
+          }
+        },
+      });
+
+      // 注册手势检测器（监听触摸事件）
+      AFRAME.registerComponent("gesture-detector", {
+        schema: {
+          element: { default: "" }
+        },
+        init: function() {
+          this.targetElement = this.data.element && document.querySelector(this.data.element);
+          if (!this.targetElement) {
+            this.targetElement = this.el;
+          }
+          this.internalState = {
+            previousState: null
+          };
+          this.emitGestureEvent = this.emitGestureEvent.bind(this);
+          this.targetElement.addEventListener("touchstart", this.emitGestureEvent);
+          this.targetElement.addEventListener("touchend", this.emitGestureEvent);
+          this.targetElement.addEventListener("touchmove", this.emitGestureEvent);
+        },
+        emitGestureEvent: function(event) {
+          const currentState = this.getTouchState(event);
+          const previousState = this.internalState.previousState;
+          const gestureContinuousEvents = {
+            1: "onefingermove",
+            2: "twofingermove"
+          };
+          // ... 简化版手势逻辑核心 ...
+          if (previousState && currentState && currentState.touchCount === previousState.touchCount && currentState.touchCount > 0) {
+             const eventDetail = {
+               positionChange: {
+                 x: currentState.position.x - previousState.position.x,
+                 y: currentState.position.y - previousState.position.y
+               }
+             };
+             if (currentState.spread) {
+               eventDetail.spreadChange = currentState.spread - previousState.spread;
+               eventDetail.startSpread = previousState.spread;
+             }
+             if (gestureContinuousEvents[currentState.touchCount]) {
+               this.el.emit(gestureContinuousEvents[currentState.touchCount], eventDetail);
+             }
+          }
+          this.internalState.previousState = currentState;
+        },
+        getTouchState: function(event) {
+          if (event.touches.length === 0) return null;
+          const touchList = [];
+          for (let i = 0; i < event.touches.length; i++) {
+             touchList.push(event.touches[i]);
+          }
+          const touchState = { touchCount: touchList.length };
+          const centerPositionRawX = touchList.reduce((sum, t) => sum + t.clientX, 0) / touchList.length;
+          const centerPositionRawY = touchList.reduce((sum, t) => sum + t.clientY, 0) / touchList.length;
+          touchState.position = { x: centerPositionRawX, y: centerPositionRawY };
+          
+          [...](asc_slot://start-slot-3)if (touchList.length >= 2) {
+            const dx = touchList[0].clientX - touchList[1].clientX;
+            const dy = touchList[0].clientY - touchList[1].clientY;
+            touchState.spread = Math.sqrt(dx * dx + dy * dy);
+          }
+          return touchState;
+        }
+      });
+    </script>
+    
+    <style>
+      body { margin: 0; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <!-- AR 场景配置 -->
+    <a-scene 
+      mindar-image="imageTargetSrc: ./targets.mind;" 
+      color-space="sRGB" 
+      renderer="colorManagement: true, physicallyCorrectLights" 
+      vr-mode-ui="enabled: false" 
+      device-orientation-permission-ui="enabled: false"
+      gesture-detector>
+      
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+      <!-- 识别到目标后显示的内容 -->
+      <!-- targetIndex: 0 表示识别 targets.mind 里的第一张图 -->
+      <a-entity mindar-image-target="targetIndex: 0">
+        
+        [...](asc_slot://start-slot-5)<!-- 这里是你想显示的AR内容，比如一个平面图片 -->
+        <!-- src 换成你自己的图片文件名，例如 overlay.png -->
+        <!-- gesture-handler 让它支持手势 -->
+        <a-plane 
+          src="./overlay.png" 
+          position="0 0 0" 
+          height="1" 
+          width="1" 
+          rotation="0 0 0" 
+          class="clickable"
+          gesture-handler>
+        </a-plane>
+
+      </a-entity>
+    </a-scene>
+  </body>
+</html>
