@@ -3,26 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>流光纹样 (黄金版)</title>
+    <title>智能诊断版粒子系统</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: monospace; }
         
+        /* 调试日志面板 */
+        #debug-console {
+            position: absolute; top: 0; left: 0; width: 100%; height: auto;
+            background: rgba(0,0,0,0.5); color: #0f0; font-size: 10px;
+            padding: 5px; pointer-events: none; z-index: 200;
+            white-space: pre-wrap; word-break: break-all;
+        }
+
         #ui-container {
-            position: absolute; top: 20px; left: 20px;
-            color: #ffd700; z-index: 100;
-            text-shadow: 0 0 5px #ffd700;
-            pointer-events: none;
+            position: absolute; bottom: 20px; left: 20px;
+            z-index: 100; color: #ffd700;
+            background: rgba(50,50,50,0.8); padding: 10px; border-radius: 8px;
         }
         
         #loading {
             position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            color: #ffd700; font-size: 18px;
-            pointer-events: none;
-            border: 1px solid #ffd700;
-            padding: 10px 20px;
-            border-radius: 5px;
-            background: rgba(0,0,0,0.8);
+            color: #ffd700; font-size: 16px; border: 1px solid #ffd700;
+            padding: 10px 20px; background: rgba(0,0,0,0.8);
+            z-index: 150;
         }
         
         .input_video { display: none; }
@@ -34,15 +38,31 @@
 </head>
 <body>
 
+    <div id="debug-console">🔍 系统日志启动...<br></div>
+
     <div id="ui-container">
-        <h3>✨ 流光纹样</h3>
-        <p style="font-size:12px; opacity:0.8;">如果是黑屏，请检查文件名是否为 overlay.png</p>
+        <b>交互控制</b><br>
+        <span style="font-size:10px">张开手掌扩散，握拳还原</span>
     </div>
 
-    <div id="loading">正在提取光点...</div>
+    <div id="loading">正在尝试加载 overlay.png ...</div>
     <video class="input_video"></video>
 
     <script>
+        // --- 日志工具 ---
+        function log(msg) {
+            const consoleDiv = document.getElementById('debug-console');
+            consoleDiv.innerHTML += `> ${msg}<br>`;
+            console.log(msg);
+        }
+
+        function error(msg) {
+            const consoleDiv = document.getElementById('debug-console');
+            consoleDiv.innerHTML += `<span style="color:red; font-weight:bold;">❌ 错误: ${msg}</span><br>`;
+        }
+
+        // --- 1. 场景初始化 ---
+        log("初始化 3D 场景...");
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
         camera.position.z = 180;
@@ -54,106 +74,146 @@
         let particles;
         let originalPositions = [];
         let randomTargets = [];
-        
-        // 1. 先创建一个“备用”的立方体，防止图片加载失败啥都看不见
-        // 如果你看到屏幕上有个红色的方块，说明3D功能是好的，只是图片没读到
-        const debugGeo = new THREE.BoxGeometry(10, 10, 10);
-        const debugMat = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true });
-        const debugMesh = new THREE.Mesh(debugGeo, debugMat);
-        debugMesh.position.set(0, -50, 0); // 放在下面一点
-        // scene.add(debugMesh); // 取消注释这行可以看到调试方块
 
-        const img = new Image();
-        img.src = './overlay.png'; // ⚠️ 再次确认文件名
-        img.crossOrigin = "Anonymous";
-
-        img.onload = function() {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
+        // --- 2. 备用方案：生成心形图案 ---
+        function createHeartFallback() {
+            log("⚠️ 启动备用方案：生成内置心形图案");
+            document.getElementById('loading').innerText = "加载图片失败，已切换至演示模式";
             
-            const targetWidth = 300; 
-            const scale = targetWidth / img.width; 
-            canvas.width = targetWidth;
-            canvas.height = img.height * scale;
-            
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imgData.data;
-
             const geometry = new THREE.BufferGeometry();
             const positions = [];
             const colors = [];
-            
-            // 金色 (Gold)
-            const baseColor = new THREE.Color(0xffd700); 
+            const color = new THREE.Color(0xff0055); // 红色
 
-            let count = 0;
-            for (let y = 0; y < canvas.height; y++) {
-                for (let x = 0; x < canvas.width; x++) {
-                    const i = (y * canvas.width + x) * 4;
-                    const alpha = data[i + 3];
+            // 生成心形点阵
+            for (let i = 0; i < 3000; i++) {
+                const t = Math.random() * Math.PI * 2;
+                // 心形公式
+                const x = 16 * Math.pow(Math.sin(t), 3);
+                const y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+                
+                // 随机填充内部
+                const scale = (Math.random() * 0.8 + 0.2) * 4; 
+                
+                const pX = x * scale;
+                const pY = y * scale;
+                const pZ = 0;
 
-                    // 只要有一点不透明，就生成粒子
-                    if (alpha > 10) {
-                        const pX = (x - canvas.width / 2) * 1.2; // 稍微拉开一点间距
-                        const pY = -(y - canvas.height / 2) * 1.2;
-                        const pZ = 0;
-
-                        positions.push(pX, pY, pZ);
-                        originalPositions.push(pX, pY, pZ);
-
-                        randomTargets.push(
-                            (Math.random() - 0.5) * 400,
-                            (Math.random() - 0.5) * 400,
-                            (Math.random() - 0.5) * 400
-                        );
-
-                        // ⚠️ 强制染色！无视原图颜色
-                        // 随机一点点亮度变化，让它闪烁
-                        const variance = Math.random() * 0.5 + 0.5;
-                        colors.push(baseColor.r * variance, baseColor.g * variance, baseColor.b * variance);
-                        
-                        count++;
-                    }
-                }
-            }
-
-            console.log("生成的粒子数量:", count);
-            if (count === 0) {
-                alert("警告：图片读取到了，但没有提取到像素点！请检查图片是不是纯透明的？");
+                positions.push(pX, pY, pZ);
+                originalPositions.push(pX, pY, pZ);
+                randomTargets.push((Math.random()-0.5)*400, (Math.random()-0.5)*400, (Math.random()-0.5)*400);
+                colors.push(color.r, color.g, color.b);
             }
 
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
             geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            
+            createParticleSystem(geometry);
+        }
 
+        function createParticleSystem(geometry) {
             const material = new THREE.PointsMaterial({
                 size: 1.5,
                 vertexColors: true,
                 transparent: true,
-                opacity: 1.0, 
-                blending: THREE.AdditiveBlending, // 发光模式
+                opacity: 0.9,
+                blending: THREE.AdditiveBlending,
                 depthWrite: false
             });
-
             particles = new THREE.Points(geometry, material);
             scene.add(particles);
-            
+            log("✅ 粒子系统创建成功！");
             document.getElementById('loading').style.display = 'none';
-        };
-        
-        // 假如图片加载失败
-        img.onerror = function() {
-            alert("图片加载失败！请检查 overlay.png 是否存在，或者文件名大小写是否正确。");
-            document.getElementById('loading').innerText = "❌ 图片加载失败";
         }
+
+        // --- 3. 尝试加载图片 ---
+        log("开始请求图片: ./overlay.png");
+        const img = new Image();
+        img.src = './overlay.png';
+        img.crossOrigin = "Anonymous";
+
+        // 设置一个3秒的超时计时器
+        // 如果3秒内 img.onload 没触发，就认为失败，直接画心形
+        const timeoutID = setTimeout(() => {
+            log("⏰ 图片加载超时 (3秒无响应)");
+            if (!particles) createHeartFallback();
+        }, 3000);
+
+        img.onload = function() {
+            clearTimeout(timeoutID); // 取消超时计时
+            log(`图片加载成功! 尺寸: ${img.width}x${img.height}`);
+            
+            try {
+                log("尝试创建 Canvas 并读取像素...");
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                const targetWidth = 300; 
+                const scale = targetWidth / img.width; 
+                canvas.width = targetWidth;
+                canvas.height = img.height * scale;
+                
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                
+                // 这里最容易出错 (跨域安全策略)
+                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imgData.data;
+                log("像素数据读取成功！开始生成粒子...");
+
+                const geometry = new THREE.BufferGeometry();
+                const positions = [];
+                const colors = [];
+                const baseColor = new THREE.Color(0xffd700); // 强制金色
+
+                let count = 0;
+                for (let y = 0; y < canvas.height; y++) {
+                    for (let x = 0; x < canvas.width; x++) {
+                        const i = (y * canvas.width + x) * 4;
+                        if (data[i + 3] > 20) { // 不透明度判断
+                            const pX = (x - canvas.width / 2) * 1.2;
+                            const pY = -(y - canvas.height / 2) * 1.2;
+                            positions.push(pX, pY, 0);
+                            originalPositions.push(pX, pY, 0);
+                            randomTargets.push((Math.random()-0.5)*400, (Math.random()-0.5)*400, (Math.random()-0.5)*400);
+                            
+                            // 颜色
+                            const v = Math.random() * 0.5 + 0.5;
+                            colors.push(baseColor.r * v, baseColor.g * v, baseColor.b * v);
+                            count++;
+                        }
+                    }
+                }
+                
+                log(`提取到 ${count} 个粒子点`);
+                if (count === 0) {
+                    error("图片全是透明的？没有提取到点");
+                    createHeartFallback();
+                    return;
+                }
+
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+                
+                createParticleSystem(geometry);
+
+            } catch (e) {
+                error("处理图片时出错: " + e.message);
+                createHeartFallback();
+            }
+        };
+
+        img.onerror = function() {
+            clearTimeout(timeoutID);
+            error("找不到图片 ./overlay.png (404)");
+            createHeartFallback();
+        };
 
         // --- 手势 ---
         let handOpenness = 0; 
-        
         function onResults(results) {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const landmarks = results.multiHandLandmarks[0];
-                const dist = Math.sqrt(Math.pow(landmarks[4].x - landmarks[8].x, 2) + Math.pow(landmarks[4].y - landmarks[8].y, 2));
+                const lm = results.multiHandLandmarks[0];
+                const dist = Math.sqrt(Math.pow(lm[4].x - lm[8].x, 2) + Math.pow(lm[4].y - lm[8].y, 2));
                 handOpenness = Math.max(0, Math.min(1, (dist - 0.04) * 3));
             } else {
                 handOpenness *= 0.9;
@@ -161,4 +221,9 @@
         }
 
         function animate() {
-            requestAnimationFra
+            requestAnimationFrame(animate);
+            if (particles) {
+                const pos = particles.geometry.attributes.position.array;
+                for (let i = 0; i < pos.length; i += 3) {
+                    const tx = originalPositions[i] + (randomTargets[i] / 400 * 300) * handOpenness;
+                    const ty = originalPositions[i+1] + (randomTargets[i+1] / 400 
