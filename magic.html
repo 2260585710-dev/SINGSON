@@ -3,52 +3,206 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>超精细纹样还原</title>
+    <title>高清细节平衡版</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #ui {
-            position: absolute; bottom: 20px; left: 20px;
-            color: white; pointer-events: none;
-            background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px;
+            position: absolute; bottom: 30px; left: 20px;
+            color: rgba(255,255,255,0.8); pointer-events: none;
+            background: rgba(0,0,0,0.6); padding: 12px; border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
         }
         #loading {
             position: absolute; top: 50%; left: 50%; 
             transform: translate(-50%, -50%);
-            color: #0ff; font-size: 14px;
+            color: #0ff; font-size: 16px;
             pointer-events: none;
+            text-align: center;
+            line-height: 1.5;
             text-shadow: 0 0 10px #0ff;
         }
         .input_video { display: none; }
     </style>
-    <!-- 继续使用稳定的 unpkg 源 -->
+    <!-- 核心库 -->
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 </head>
 <body>
 
-    <div id="loading">正在进行高精度采样...</div>
+    <div id="loading">正在加载纹样...<br><span style="font-size:12px; color:#666">如果不动请刷新</span></div>
+    
     <div id="ui">
-        <b>🖐️ 交互模式</b><br>
-        <span style="font-size:12px; color:#aaa">张手扩散 · 握拳还原</span>
+        <b style="color:#fff">🖐️ 交互控制</b><br>
+        <span style="font-size:12px;">张开手掌：粒子扩散</span><br>
+        <span style="font-size:12px;">握紧拳头：纹样还原</span>
     </div>
+
     <video class="input_video"></video>
 
     <script>
-        // -----------------------------------------------------------
-        // 📷 依然使用本地图片读取
-        // -----------------------------------------------------------
-        const imageSrc = "./overlay.png"; 
+        const imageSrc = "./overlay.png"; // 确保文件名正确
 
         const scene = new THREE.Scene();
-        // 加一点点环境光，让粒子不那么死板
-        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
-        camera.position.z = 180; // 镜头距离
+        camera.position.z = 160; // 稍微拉近镜头，看细节
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        // 开启物理像素比，手机上会更清晰
-        renderer.setPixelRatio(window.devicePixelRatio); 
-        document.body.appendChild(rendere
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 限制像素比，防止高分屏手机卡死
+        document.body.appendChild(renderer.domElement);
+
+        let particles;
+        let originalPositions = [];
+        let randomTargets = [];
+        let handOpenness = 0;
+
+        const img = new Image();
+        img.crossOrigin = "Anonymous";
+        img.src = imageSrc;
+
+        img.onload = function() {
+            try {
+                document.getElementById('loading').innerText = "正在生成高密度粒子...";
+                
+                // --- ⚡️ 性能优化的关键 ---
+                // 使用 setTimeout 让 UI 有机会刷新文字，避免浏览器假死
+                setTimeout(() => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // 🌟 320 是手机性能的平衡点，既清晰又流畅
+                    const targetWidth = 320; 
+                    const scale = targetWidth / img.width;
+                    canvas.width = targetWidth;
+                    canvas.height = img.height * scale;
+                    
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+                    const geometry = new THREE.BufferGeometry();
+                    const positions = [];
+                    const colors = [];
+                    const colorVar = new THREE.Color();
+
+                    for (let y = 0; y < canvas.height; y++) {
+                        for (let x = 0; x < canvas.width; x++) {
+                            const i = (y * canvas.width + x) * 4;
+                            const alpha = data[i + 3];
+
+                            if (alpha > 20) { // 稍微提高一点阈值，过滤杂边
+                                // 坐标计算
+                                const pX = (x - canvas.width / 2) * 1.1; // 1.1倍间距，让画面撑得更大
+                                const pY = -(y - canvas.height / 2) * 1.1;
+                                const pZ = 0;
+
+                                positions.push(pX, pY, pZ);
+                                originalPositions.push(pX, pY, pZ);
+                                
+                                // 爆炸范围
+                                randomTargets.push(
+                                    (Math.random()-0.5)*450, 
+                                    (Math.random()-0.5)*450, 
+                                    (Math.random()-0.5)*300
+                                );
+                                
+                                // 🎨 颜色处理：原色 + 适度提亮
+                                colorVar.setRGB(data[i]/255, data[i+1]/255, data[i+2]/255);
+                                // 提亮 20%，既保留细节又不暗
+                                colorVar.multiplyScalar(1.2); 
+                                
+                                colors.push(colorVar.r, colorVar.g, colorVar.b);
+                            }
+                        }
+                    }
+
+                    if (positions.length === 0) {
+                        throw new Error("没有提取到像素，可能是图片全透明？");
+                    }
+
+                    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+                    const material = new THREE.PointsMaterial({
+                        size: 0.9, // 粒子大小：0.9 比较细腻
+                        vertexColors: true,
+                        transparent: true,
+                        opacity: 1.0, // 不透明，保证清晰度
+                        blending: THREE.NormalBlending, // 正常混合，还原真实色彩
+                        depthTest: false
+                    });
+
+                    particles = new THREE.Points(geometry, material);
+                    scene.add(particles);
+                    
+                    document.getElementById('loading').style.display = 'none';
+                }, 100); // 延时 100ms 执行
+
+            } catch (e) {
+                document.getElementById('loading').innerText = "出错: " + e.message;
+                document.getElementById('loading').style.color = "red";
+            }
+        };
+
+        img.onerror = function() {
+            document.getElementById('loading').innerText = "图片加载失败 (404)\n请检查 overlay.png";
+            document.getElementById('loading').style.color = "red";
+        }
+
+        // 动画循环
+        function animate() {
+            requestAnimationFrame(animate);
+            if (particles) {
+                const pos = particles.geometry.attributes.position.array;
+                
+                // 默认呼吸效果
+                let factor = handOpenness;
+                if (factor === 0) {
+                     factor = Math.sin(Date.now() * 0.0015) * 0.03 + 0.03;
+                }
+
+                for (let i = 0; i < pos.length; i += 3) {
+                    const tx = originalPositions[i] + (randomTargets[i] - originalPositions[i]) * factor;
+                    const ty = originalPositions[i+1] + (randomTargets[i+1] - originalPositions[i+1]) * factor;
+                    const tz = originalPositions[i+2] + (randomTargets[i+2] - originalPositions[i+2]) * factor;
+                    
+                    pos[i] += (tx - pos[i]) * 0.1;
+                    pos[i+1] += (ty - pos[i+1]) * 0.1;
+                    pos[i+2] += (tz - pos[i+2]) * 0.1;
+                }
+                particles.geometry.attributes.position.needsUpdate = true;
+                particles.rotation.y = Math.sin(Date.now() * 0.0005) * 0.15; // 稍微加大一点自转角度
+            }
+            renderer.render(scene, camera);
+        }
+
+        // 手势部分
+        try {
+            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+            hands.setOptions({maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5});
+            hands.onResults((results) => {
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    const lm = results.multiHandLandmarks[0];
+                    const dist = Math.sqrt(Math.pow(lm[4].x - lm[8].x, 2) + Math.pow(lm[4].y - lm[8].y, 2));
+                    handOpenness = Math.max(0, Math.min(1, (dist - 0.04) * 3));
+                } else {
+                    handOpenness = 0;
+                }
+            });
+            
+            const video = document.getElementsByClassName('input_video')[0];
+            const cameraUtils = new Camera(video, {
+                onFrame: async () => { await hands.send({image: video}); },
+                width: 640, height: 480
+            });
+            cameraUtils.start();
+        } catch(e) {}
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
