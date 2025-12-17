@@ -3,39 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>高亮纹样粒子</title>
+    <title>流光纹样 (黄金版)</title>
     <style>
-        /* 背景不再是纯黑，而是带一点点渐变的深空灰，更有质感 */
-        body { 
-            margin: 0; 
-            overflow: hidden; 
-            background: radial-gradient(circle at center, #1a1a1a 0%, #000000 100%); 
-            font-family: sans-serif; 
-        }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
         
         #ui-container {
-            position: absolute;
-            top: 20px; left: 20px;
-            background: rgba(30, 30, 30, 0.6);
-            backdrop-filter: blur(8px);
-            padding: 15px;
-            border-radius: 10px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: white;
-            z-index: 100;
-            width: 180px;
+            position: absolute; top: 20px; left: 20px;
+            color: #ffd700; z-index: 100;
+            text-shadow: 0 0 5px #ffd700;
+            pointer-events: none;
         }
-        
-        h3 { margin: 0 0 10px 0; font-size: 14px; color: #fff;}
-        label { font-size: 11px; color: #ccc; display: block; margin-top: 8px; }
-        input[type="range"] { width: 100%; margin: 4px 0; }
         
         #loading {
             position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            color: #0ff; font-size: 16px; font-weight: bold;
-            pointer-events: none; transition: opacity 0.5s;
-            text-shadow: 0 0 10px #0ff;
+            color: #ffd700; font-size: 18px;
+            pointer-events: none;
+            border: 1px solid #ffd700;
+            padding: 10px 20px;
+            border-radius: 5px;
+            background: rgba(0,0,0,0.8);
         }
         
         .input_video { display: none; }
@@ -48,18 +35,11 @@
 <body>
 
     <div id="ui-container">
-        <h3>💡 亮度调节</h3>
-        <div id="status-text" style="font-size: 11px; color: #aaa;">加载中...</div>
-        
-        <label>粒子亮度 (Brightness)</label>
-        <!-- 新增亮度滑块 -->
-        <input type="range" id="brightSlider" min="0.5" max="3.0" step="0.1" value="1.5">
-
-        <label>颗粒大小 (Size)</label>
-        <input type="range" id="sizeSlider" min="0.5" max="3.0" step="0.1" value="1.2">
+        <h3>✨ 流光纹样</h3>
+        <p style="font-size:12px; opacity:0.8;">如果是黑屏，请检查文件名是否为 overlay.png</p>
     </div>
 
-    <div id="loading">正在点亮纹样...</div>
+    <div id="loading">正在提取光点...</div>
     <video class="input_video"></video>
 
     <script>
@@ -67,26 +47,31 @@
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
         camera.position.z = 180;
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
         let particles;
         let originalPositions = [];
         let randomTargets = [];
-        let baseColors = []; // 存一份原始颜色，方便调节亮度
-        let spreadRange = 300;
+        
+        // 1. 先创建一个“备用”的立方体，防止图片加载失败啥都看不见
+        // 如果你看到屏幕上有个红色的方块，说明3D功能是好的，只是图片没读到
+        const debugGeo = new THREE.BoxGeometry(10, 10, 10);
+        const debugMat = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true });
+        const debugMesh = new THREE.Mesh(debugGeo, debugMat);
+        debugMesh.position.set(0, -50, 0); // 放在下面一点
+        // scene.add(debugMesh); // 取消注释这行可以看到调试方块
 
         const img = new Image();
-        img.src = './overlay.png';
+        img.src = './overlay.png'; // ⚠️ 再次确认文件名
         img.crossOrigin = "Anonymous";
 
         img.onload = function() {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             
-            // 保持高采样率
-            const targetWidth = 350; 
+            const targetWidth = 300; 
             const scale = targetWidth / img.width; 
             canvas.width = targetWidth;
             canvas.height = img.height * scale;
@@ -98,141 +83,82 @@
             const geometry = new THREE.BufferGeometry();
             const positions = [];
             const colors = [];
-            const colorVar = new THREE.Color();
+            
+            // 金色 (Gold)
+            const baseColor = new THREE.Color(0xffd700); 
 
+            let count = 0;
             for (let y = 0; y < canvas.height; y++) {
                 for (let x = 0; x < canvas.width; x++) {
                     const i = (y * canvas.width + x) * 4;
                     const alpha = data[i + 3];
 
+                    // 只要有一点不透明，就生成粒子
                     if (alpha > 10) {
-                        const pX = x - canvas.width / 2;
-                        const pY = -(y - canvas.height / 2);
+                        const pX = (x - canvas.width / 2) * 1.2; // 稍微拉开一点间距
+                        const pY = -(y - canvas.height / 2) * 1.2;
                         const pZ = 0;
 
                         positions.push(pX, pY, pZ);
                         originalPositions.push(pX, pY, pZ);
 
                         randomTargets.push(
-                            (Math.random() - 0.5) * spreadRange,
-                            (Math.random() - 0.5) * spreadRange,
-                            (Math.random() - 0.5) * spreadRange
+                            (Math.random() - 0.5) * 400,
+                            (Math.random() - 0.5) * 400,
+                            (Math.random() - 0.5) * 400
                         );
 
-                        // --- 关键：颜色增强 ---
-                        colorVar.setRGB(data[i]/255, data[i+1]/255, data[i+2]/255);
+                        // ⚠️ 强制染色！无视原图颜色
+                        // 随机一点点亮度变化，让它闪烁
+                        const variance = Math.random() * 0.5 + 0.5;
+                        colors.push(baseColor.r * variance, baseColor.g * variance, baseColor.b * variance);
                         
-                        // 初始先稍微提亮一点
-                        colors.push(colorVar.r, colorVar.g, colorVar.b);
-                        baseColors.push(colorVar.r, colorVar.g, colorVar.b);
+                        count++;
                     }
                 }
+            }
+
+            console.log("生成的粒子数量:", count);
+            if (count === 0) {
+                alert("警告：图片读取到了，但没有提取到像素点！请检查图片是不是纯透明的？");
             }
 
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
             geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
             const material = new THREE.PointsMaterial({
-                size: 1.2,
+                size: 1.5,
                 vertexColors: true,
                 transparent: true,
-                opacity: 0.9,
-                sizeAttenuation: true,
-                depthWrite: false, // 关掉深度写入，防止黑边
-                // 换回 AdditiveBlending (发光模式)，但在黑色背景下效果最好
-                blending: THREE.AdditiveBlending 
+                opacity: 1.0, 
+                blending: THREE.AdditiveBlending, // 发光模式
+                depthWrite: false
             });
 
             particles = new THREE.Points(geometry, material);
             scene.add(particles);
             
-            // 初始应用亮度倍增
-            updateBrightness(1.5);
-            
             document.getElementById('loading').style.display = 'none';
         };
-
-        // --- 亮度调节函数 ---
-        function updateBrightness(val) {
-            if (!particles) return;
-            const colors = particles.geometry.attributes.color.array;
-            for (let i = 0; i < baseColors.length; i++) {
-                // 原始颜色 * 亮度系数
-                colors[i] = Math.min(1, baseColors[i] * val);
-            }
-            particles.geometry.attributes.color.needsUpdate = true;
+        
+        // 假如图片加载失败
+        img.onerror = function() {
+            alert("图片加载失败！请检查 overlay.png 是否存在，或者文件名大小写是否正确。");
+            document.getElementById('loading').innerText = "❌ 图片加载失败";
         }
 
-        // --- 手势与动画 ---
+        // --- 手势 ---
         let handOpenness = 0; 
         
         function onResults(results) {
-            const statusText = document.getElementById('status-text');
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                statusText.innerText = "🖐️ 已连接";
-                statusText.style.color = "#0f0";
-                
                 const landmarks = results.multiHandLandmarks[0];
-                const thumb = landmarks[4];
-                const index = landmarks[8];
-                const dist = Math.sqrt(Math.pow(thumb.x - index.x, 2) + Math.pow(thumb.y - index.y, 2));
-                
-                let val = (dist - 0.04) * 3;
-                handOpenness = Math.max(0, Math.min(1, val));
+                const dist = Math.sqrt(Math.pow(landmarks[4].x - landmarks[8].x, 2) + Math.pow(landmarks[4].y - landmarks[8].y, 2));
+                handOpenness = Math.max(0, Math.min(1, (dist - 0.04) * 3));
             } else {
-                statusText.innerText = "👀 寻找手势...";
-                statusText.style.color = "#888";
                 handOpenness *= 0.9;
             }
         }
 
         function animate() {
-            requestAnimationFrame(animate);
-            if (particles) {
-                const positions = particles.geometry.attributes.position.array;
-                
-                for (let i = 0; i < positions.length; i += 3) {
-                    const targetX = originalPositions[i] + (randomTargets[i] / 300 * 300) * handOpenness;
-                    const targetY = originalPositions[i+1] + (randomTargets[i+1] / 300 * 300) * handOpenness;
-                    const targetZ = originalPositions[i+2] + (randomTargets[i+2] / 300 * 300) * handOpenness;
-
-                    positions[i] += (targetX - positions[i]) * 0.1;
-                    positions[i+1] += (targetY - positions[i+1]) * 0.1;
-                    positions[i+2] += (targetZ - positions[i+2]) * 0.1;
-                }
-                particles.geometry.attributes.position.needsUpdate = true;
-                
-                // 微微旋转，展示立体感
-                particles.rotation.y = Math.sin(Date.now() * 0.0005) * 0.1;
-            }
-            renderer.render(scene, camera);
-        }
-
-        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5});
-        hands.onResults(onResults);
-        
-        const videoElement = document.getElementsByClassName('input_video')[0];
-        const cameraUtils = new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
-            width: 640, height: 480
-        });
-        cameraUtils.start();
-
-        // UI 交互
-        document.getElementById('sizeSlider').addEventListener('input', (e) => {
-            if(particles) particles.material.size = parseFloat(e.target.value);
-        });
-        
-        document.getElementById('brightSlider').addEventListener('input', (e) => {
-            updateBrightness(parseFloat(e.target.value));
-        });
-        
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-    </script>
-</body>
-</html>
+            requestAnimationFra
