@@ -3,42 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>纹样粒子重构系统</title>
+    <title>超清纹样粒子沙画</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #111; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
         
-        /* UI 面板 */
         #ui-container {
             position: absolute;
             top: 20px; left: 20px;
-            background: rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(8px);
-            padding: 20px;
-            border-radius: 12px;
+            background: rgba(20, 20, 20, 0.8);
+            backdrop-filter: blur(12px);
+            padding: 15px;
+            border-radius: 8px;
             border: 1px solid rgba(255, 255, 255, 0.1);
             color: white;
             z-index: 100;
-            width: 220px;
+            width: 180px;
         }
         
-        h3 { margin: 0 0 10px 0; font-size: 16px; color: #00ffcc; }
+        h3 { margin: 0 0 10px 0; font-size: 14px; color: #fff; border-bottom: 1px solid #444; padding-bottom: 5px;}
         
-        .status-dot {
-            display: inline-block; width: 10px; height: 10px; 
-            border-radius: 50%; background: #555; margin-right: 5px;
-        }
-        .active { background: #00ff00; box-shadow: 0 0 8px #00ff00; }
+        label { font-size: 10px; color: #aaa; display: block; margin-top: 8px; }
+        input[type="range"] { width: 100%; margin: 4px 0; cursor: pointer; }
         
         #loading {
             position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            color: #00ffcc; font-size: 20px; text-align: center;
+            color: white; font-size: 14px; text-align: center;
             pointer-events: none; transition: opacity 0.5s;
+            background: rgba(0,0,0,0.7); padding: 15px 25px; border-radius: 30px; border: 1px solid #333;
         }
         
-        input[type="range"] { width: 100%; margin: 10px 0; }
-        
-        /* 隐藏视频源 */
         .input_video { display: none; }
     </style>
 
@@ -49,98 +43,81 @@
 <body>
 
     <div id="ui-container">
-        <h3>🌌 粒子重构</h3>
-        <div style="font-size: 12px; color: #ccc; margin-bottom: 15px;">
-            <span id="cam-status" class="status-dot"></span>
-            <span id="status-text">正在初始化...</span>
-        </div>
+        <h3>🎨 粒子精细度调节</h3>
+        <div id="status-text" style="font-size: 11px; color: #666; margin-bottom: 5px;">初始化...</div>
         
-        <label style="font-size:12px;">粒子大小</label>
-        <input type="range" id="sizeSlider" min="1" max="5" step="0.1" value="2">
+        <label>颗粒大小 (Size)</label>
+        <!-- 默认值调得非常小 0.8 -->
+        <input type="range" id="sizeSlider" min="0.2" max="2.0" step="0.1" value="0.8">
 
-        <label style="font-size:12px;">粒子颜色</label>
-        <input type="color" id="colorPicker" value="#ffffff" style="width:100%; border:none; height:30px;">
-        
-        <p style="font-size: 11px; color: #888; margin-top:10px; line-height: 1.5;">
-            ✋ <b>张开手掌</b>：粒子炸裂<br>
-            ✊ <b>握紧拳头</b>：还原图像
-        </p>
+        <label>炸裂范围 (Spread)</label>
+        <input type="range" id="spreadSlider" min="50" max="600" step="10" value="300">
     </div>
 
-    <div id="loading">正在读取纹样数据...<br><span style="font-size:12px; color:#666">请稍候</span></div>
+    <div id="loading">正在进行高精度采样...<br><span style="font-size:10px; color:#888">(如卡顿请刷新)</span></div>
     <video class="input_video"></video>
 
     <script>
-        // --- 1. 基础场景设置 ---
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.z = 100; // 摄像机距离，太近看不到全图
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        camera.position.z = 180; // 镜头拉远一点，看清全貌
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // --- 2. 核心：从图片生成粒子 ---
         let particles;
-        let originalPositions = []; // 记住每个粒子“应该在”的位置
-        let randomTargets = [];     // 粒子“爆炸后”飞去的位置
-        
-        // 加载你的图片
+        let originalPositions = [];
+        let randomTargets = [];
+        let spreadRange = 300;
+
         const img = new Image();
-        img.src = './overlay.png'; // 自动读取你的纹样
-        img.crossOrigin = "Anonymous"; // 防止跨域报错
+        img.src = './overlay.png';
+        img.crossOrigin = "Anonymous";
 
         img.onload = function() {
-            document.getElementById('loading').innerText = "正在生成粒子...";
-            
-            // 创建一个临时的画布来读取像素
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             
-            // 限制尺寸，防止粒子太多卡死 (宽200像素够了)
-            const scale = 200 / img.width; 
-            canvas.width = 200;
+            // --- 🚀 极端优化设置 ---
+            // 400像素宽，意味着大概会有 10万-16万个粒子（取决于你的图是不是满的）
+            // 这是手机网页能承受的极限边缘，为了清晰度拼了！
+            const targetWidth = 400; 
+            const scale = targetWidth / img.width; 
+            canvas.width = targetWidth;
             canvas.height = img.height * scale;
             
-            // 把图片画在画布上
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            
-            // 获取所有像素颜色数据
             const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const data = imgData.data;
 
             const geometry = new THREE.BufferGeometry();
             const positions = [];
             const colors = [];
-
             const colorVar = new THREE.Color();
 
-            // 遍历像素
             for (let y = 0; y < canvas.height; y++) {
                 for (let x = 0; x < canvas.width; x++) {
                     const i = (y * canvas.width + x) * 4;
                     const alpha = data[i + 3];
 
-                    // 只有当这个点不是透明的，才生成粒子
-                    if (alpha > 20) {
-                        // 计算坐标 (让图像居中)
+                    // 只要有一点点颜色就保留，保证边缘完整
+                    if (alpha > 5) {
                         const pX = x - canvas.width / 2;
-                        const pY = -(y - canvas.height / 2); // Y轴反转
+                        const pY = -(y - canvas.height / 2);
                         const pZ = 0;
 
                         positions.push(pX, pY, pZ);
-                        
-                        // 记录原始位置 (拼成图的样子)
                         originalPositions.push(pX, pY, pZ);
 
-                        // 记录爆炸位置 (随机飞散)
+                        // 随机炸开方向
                         randomTargets.push(
-                            (Math.random() - 0.5) * 400, // 散得更开
-                            (Math.random() - 0.5) * 400,
-                            (Math.random() - 0.5) * 200
+                            (Math.random() - 0.5) * spreadRange,
+                            (Math.random() - 0.5) * spreadRange,
+                            (Math.random() - 0.5) * spreadRange
                         );
 
-                        // 提取原图颜色
+                        // 颜色采样
                         colorVar.setRGB(data[i]/255, data[i+1]/255, data[i+2]/255);
                         colors.push(colorVar.r, colorVar.g, colorVar.b);
                     }
@@ -150,92 +127,75 @@
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
             geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
-            // 创建材质 (简单的发光点)
             const material = new THREE.PointsMaterial({
-                size: 2,
-                vertexColors: true, // 使用图片原本的颜色
+                size: 0.8, // 默认非常小，像沙子一样
+                vertexColors: true,
                 transparent: true,
-                opacity: 0.9,
-                sizeAttenuation: true
+                opacity: 1.0, // 不透明！为了清晰
+                sizeAttenuation: true,
+                depthTest: false, // 关掉深度测试，防止重叠闪烁
+                // --- 关键修改 ---
+                // 使用 NormalBlending 而不是 AdditiveBlending
+                // 这样粒子就是实心的颜色，不会糊在一起发光
+                blending: THREE.NormalBlending 
             });
 
             particles = new THREE.Points(geometry, material);
             scene.add(particles);
             
-            document.getElementById('loading').style.opacity = 0; // 隐藏加载字
+            document.getElementById('loading').style.display = 'none';
         };
 
-        // --- 3. 手势控制逻辑 ---
-        let handOpenness = 0; // 0=闭合(还原), 1=张开(爆炸)
-
+        // --- 手势部分 (保持不变) ---
+        let handOpenness = 0; 
+        
         function onResults(results) {
             const statusText = document.getElementById('status-text');
-            const camDot = document.getElementById('cam-status');
-
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                statusText.innerText = "已连接手势";
-                statusText.style.color = "#00ff00";
-                camDot.classList.add('active');
-
-                // 计算手指张开程度
+                statusText.innerText = "🖐️ 手势已连接";
+                statusText.style.color = "#0f0";
+                
                 const landmarks = results.multiHandLandmarks[0];
                 const thumb = landmarks[4];
                 const index = landmarks[8];
-                
-                // 大拇指和食指距离
                 const dist = Math.sqrt(Math.pow(thumb.x - index.x, 2) + Math.pow(thumb.y - index.y, 2));
                 
-                // 映射一下：距离 > 0.2 算张开， < 0.05 算闭合
-                let val = (dist - 0.05) * 4; 
-                handOpenness = Math.max(0, Math.min(1, val)); // 限制在0-1
-                
+                let val = (dist - 0.04) * 3;
+                handOpenness = Math.max(0, Math.min(1, val));
             } else {
-                statusText.innerText = "请举起手掌";
-                statusText.style.color = "#ccc";
-                camDot.classList.remove('active');
-                // 没手的时候，缓慢归位
-                handOpenness = handOpenness * 0.9; 
+                statusText.innerText = "⏳ 等待手势...";
+                statusText.style.color = "#888";
+                handOpenness *= 0.9;
             }
         }
 
-        // --- 4. 动画循环 ---
         function animate() {
             requestAnimationFrame(animate);
-
             if (particles) {
                 const positions = particles.geometry.attributes.position.array;
                 
-                // 根据手势计算目标混合度
-                // 手张开越大，粒子越趋向 randomTargets (乱飞)
-                // 手闭合，粒子越趋向 originalPositions (原图)
+                // 性能优化：不用每次都遍历所有粒子，如果手没动，就稍微偷懒一点
+                // 但为了流畅度，我们还是每帧计算
                 
                 for (let i = 0; i < positions.length; i += 3) {
-                    // 目标 X = 原图X + (爆炸X - 原图X) * 张开度
-                    const tx = originalPositions[i] + (randomTargets[i] - originalPositions[i]) * handOpenness;
-                    const ty = originalPositions[i+1] + (randomTargets[i+1] - originalPositions[i+1]) * handOpenness;
-                    const tz = originalPositions[i+2] + (randomTargets[i+2] - originalPositions[i+2]) * handOpenness;
+                    const targetX = originalPositions[i] + (randomTargets[i] / 300 * spreadRange) * handOpenness;
+                    const targetY = originalPositions[i+1] + (randomTargets[i+1] / 300 * spreadRange) * handOpenness;
+                    const targetZ = originalPositions[i+2] + (randomTargets[i+2] / 300 * spreadRange) * handOpenness;
 
-                    // 缓动动画：每帧移动 10% 的距离
-                    positions[i] += (tx - positions[i]) * 0.1;
-                    positions[i+1] += (ty - positions[i+1]) * 0.1;
-                    positions[i+2] += (tz - positions[i+2]) * 0.1;
+                    // 加快一点归位速度 0.08 -> 0.1
+                    positions[i] += (targetX - positions[i]) * 0.1;
+                    positions[i+1] += (targetY - positions[i+1]) * 0.1;
+                    positions[i+2] += (targetZ - positions[i+2]) * 0.1;
                 }
-                
                 particles.geometry.attributes.position.needsUpdate = true;
-                
-                // 微微旋转整个场景，增加3D感
-                particles.rotation.y += 0.002;
             }
-
             renderer.render(scene, camera);
         }
-        animate();
 
-        // --- 5. 摄像头初始化 ---
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.setOptions({maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5});
         hands.onResults(onResults);
-
+        
         const videoElement = document.getElementsByClassName('input_video')[0];
         const cameraUtils = new Camera(videoElement, {
             onFrame: async () => { await hands.send({image: videoElement}); },
@@ -243,18 +203,13 @@
         });
         cameraUtils.start();
 
-        // --- UI 事件 ---
+        // UI 交互
         document.getElementById('sizeSlider').addEventListener('input', (e) => {
-            if(particles) particles.material.size = e.target.value;
+            if(particles) particles.material.size = parseFloat(e.target.value);
         });
         
-        document.getElementById('colorPicker').addEventListener('input', (e) => {
-             // 如果想强行染成单色，取消注释下面这行。
-             // 但为了保留你原图的色彩，这里我让它仅仅叠加一点颜色，或者你可以留白
-             if(particles) {
-                particles.material.color.set(e.target.value);
-                particles.material.vertexColors = false; // 切换为纯色模式
-             }
+        document.getElementById('spreadSlider').addEventListener('input', (e) => {
+            spreadRange = parseFloat(e.target.value);
         });
         
         window.addEventListener('resize', () => {
@@ -262,7 +217,6 @@
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
-
     </script>
 </body>
 </html>
