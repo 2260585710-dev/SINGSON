@@ -87,7 +87,7 @@
             
             // --- 关键修改：提高采样分辨率 ---
             // 之前的 200 改为 300，粒子数量会增加一倍以上
-            const targetWidth = 300; 
+            const targetWidth = 500; 
             const scale = targetWidth / img.width; 
             canvas.width = targetWidth;
             canvas.height = img.height * scale;
@@ -133,7 +133,7 @@
             geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
             const material = new THREE.PointsMaterial({
-                size: 1.2, // --- 关键修改：粒子变小 ---
+                size: 0.6, // --- 关键修改：粒子变小 ---
                 vertexColors: true,
                 transparent: true,
                 opacity: 0.85, // 略微透明
