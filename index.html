@@ -2,27 +2,46 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>AR 五层完美嵌套版</title>
+    <title>AR 五层纹样 (可调参版)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #input-video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; transform: scaleX(-1); }
         #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+        
+        /* 状态提示 */
         #status-box {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             text-align: center; color: white; z-index: 20; pointer-events: none;
             background: rgba(0,0,0,0.8); padding: 20px; border-radius: 12px;
-            width: 80%; max-width: 300px; font-size: 16px; line-height: 1.5;
+            width: 80%; max-width: 300px;
         }
+
+        /* 底部操作层 */
         #interaction-layer {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 100; background: transparent; display: flex;
-            justify-content: center; align-items: flex-end; padding-bottom: 50px;
+            position: absolute; bottom: 30px; width: 100%; text-align: center; z-index: 100;
         }
         #hint-text {
-            color: rgba(255,255,255,0.7); font-size: 14px; 
-            background: rgba(0,0,0,0.3); padding: 8px 15px; border-radius: 20px;
-            pointer-events: none;
+            color: rgba(255,255,255,0.8); font-size: 14px; 
+            background: rgba(0,0,0,0.5); padding: 8px 15px; border-radius: 20px;
+            display: inline-block; cursor: pointer;
+        }
+
+        /* === 新增：左上角控制面板 === */
+        #control-panel {
+            position: absolute; top: 10px; left: 10px; z-index: 50;
+            background: rgba(0, 0, 0, 0.6); padding: 10px; border-radius: 8px;
+            color: white; font-size: 12px; width: 140px;
+            backdrop-filter: blur(4px);
+        }
+        .control-item { margin-bottom: 8px; }
+        .control-item label { display: block; margin-bottom: 2px; }
+        .control-item input { width: 100%; }
+        /* 隐藏按钮 */
+        #toggle-controls {
+            position: absolute; top: 10px; right: 10px; z-index: 51;
+            background: rgba(255,255,255,0.2); border: none; color: white;
+            padding: 5px 10px; border-radius: 4px; cursor: pointer;
         }
     </style>
 </head>
@@ -30,7 +49,38 @@
     <div id="status-box">1. 初始化...</div>
     <video id="input-video" playsinline></video>
     <div id="canvas-container"></div>
-    <div id="interaction-layer"><div id="hint-text">👆 点击屏幕开启体验</div></div>
+    
+    <div id="interaction-layer">
+        <div id="hint-text">🎵 点击播放音乐</div>
+    </div>
+    
+    <!-- 控制面板开关 -->
+    <button id="toggle-controls">🛠️ 调整</button>
+
+    <!-- 控制面板 -->
+    <div id="control-panel">
+        <div class="control-item">
+            <label>第1层大小 (内): <span id="val1">1.5</span></label>
+            <input type="range" id="slider1" min="0.5" max="5.0" step="0.1" value="1.5">
+        </div>
+        <div class="control-item">
+            <label>第2层大小: <span id="val2">2.2</span></label>
+            <input type="range" id="slider2" min="0.5" max="5.0" step="0.1" value="2.2">
+        </div>
+        <div class="control-item">
+            <label>第3层大小: <span id="val3">2.9</span></label>
+            <input type="range" id="slider3" min="0.5" max="5.0" step="0.1" value="2.9">
+        </div>
+        <div class="control-item">
+            <label>第4层大小: <span id="val4">3.6</span></label>
+            <input type="range" id="slider4" min="0.5" max="5.0" step="0.1" value="3.6">
+        </div>
+        <div class="control-item">
+            <label>第5层大小 (外): <span id="val5">4.3</span></label>
+            <input type="range" id="slider5" min="0.5" max="6.0" step="0.1" value="4.3">
+        </div>
+    </div>
+
     <audio id="bgm" loop><source src="bgm.mp3" type="audio/mpeg"></audio>
 
     <script src="https://cdn.staticfile.org/three.js/r128/three.min.js"></script>
@@ -40,13 +90,13 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
     <script>
-        // === 关键修改：手动指定每一层的物理显示大小 ===
+        // 初始配置
         const LAYERS_CONFIG = [
-            { file: 'pattern_inner.png',  size: 1.5, speed: 0.005, density: 90,  dispScale: 1.0 }, // 第1层：最小
-            { file: 'pattern_outer.png',  size: 2.2, speed: 0.004, density: 100, dispScale: 1.2 }, // 第2层：大一圈
-            { file: 'pattern_outer2.png', size: 2.9, speed: 0.003, density: 100, dispScale: 1.4 }, // 第3层：再大一圈
-            { file: 'pattern_outer3.png', size: 3.6, speed: 0.002, density: 110, dispScale: 1.6 }, // 第4层
-            { file: 'pattern_outer4.png', size: 4.3, speed: 0.001, density: 110, dispScale: 1.8 }  // 第5层：最大
+            { file: 'pattern_inner.png',  size: 1.5, speed: 0.005, density: 90,  dispScale: 1.0 },
+            { file: 'pattern_outer.png',  size: 2.2, speed: 0.004, density: 100, dispScale: 1.2 },
+            { file: 'pattern_outer2.png', size: 2.9, speed: 0.003, density: 100, dispScale: 1.4 },
+            { file: 'pattern_outer3.png', size: 3.6, speed: 0.002, density: 110, dispScale: 1.6 },
+            { file: 'pattern_outer4.png', size: 4.3, speed: 0.001, density: 110, dispScale: 1.8 }
         ];
 
         window.onerror = function(msg) {
@@ -55,12 +105,24 @@
         };
 
         const statusBox = document.getElementById('status-box');
-        const interactionLayer = document.getElementById('interaction-layer');
+        const hintText = document.getElementById('hint-text');
         const bgm = document.getElementById('bgm');
+        const controlPanel = document.getElementById('control-panel');
+        const toggleBtn = document.getElementById('toggle-controls');
 
-        interactionLayer.addEventListener('click', () => {
-            bgm.play().then(() => { interactionLayer.style.display = 'none'; })
-               .catch(e => { interactionLayer.style.display = 'none'; });
+        // 音乐播放
+        hintText.addEventListener('click', () => {
+            bgm.play().then(() => { hintText.style.display = 'none'; })
+               .catch(e => { hintText.innerText = "无音乐文件"; });
+        });
+
+        // 切换控制面板显示/隐藏
+        toggleBtn.addEventListener('click', () => {
+            if (controlPanel.style.display === 'none') {
+                controlPanel.style.display = 'block';
+            } else {
+                controlPanel.style.display = 'none';
+            }
         });
 
         let scene, camera, renderer;
@@ -73,7 +135,6 @@
         function init() {
             statusBox.innerText = "2. 启动 3D 引擎...";
             scene = new THREE.Scene();
-            // 相机再拉远一点，因为第5层(4.3)非常大，需要更广的视野
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.z = 4.5; 
 
@@ -90,17 +151,35 @@
             Promise.all(loadPromises).then(textures => {
                 textures.forEach((tex, index) => {
                     const config = LAYERS_CONFIG[index];
-                    // 使用配置里的 size 参数
                     const sys = createLayer(tex, config.size, config.density, config.dispScale);
                     sys.rotationSpeed = config.speed;
+                    sys.baseSize = config.size; // 记录初始大小
                     systems.push(sys);
                     scene.add(sys.group);
+
+                    // === 绑定滑块事件 ===
+                    const slider = document.getElementById(`slider${index+1}`);
+                    const labelSpan = document.getElementById(`val${index+1}`);
+                    
+                    slider.addEventListener('input', (e) => {
+                        const newSize = parseFloat(e.target.value);
+                        labelSpan.innerText = newSize.toFixed(1);
+                        
+                        // 实时更新这一层的大小
+                        // 因为我们不能直接改 geometry 的大小，所以用 scale 缩放 group
+                        // 初始 geometry 是按 baseSize 建的，现在 scale = newSize / baseSize
+                        const scale = newSize / sys.baseSize;
+                        sys.group.scale.set(scale, scale, 1);
+                        
+                        // 更新Z轴排序，避免遮挡
+                        sys.group.position.z = (6.0 - newSize) * 0.05;
+                    });
                 });
                 
                 statusBox.innerText = "4. 启动 AI...";
                 startCamera();
             }).catch(err => { 
-                statusBox.innerHTML = "❌ 加载失败<br>请检查5张图片文件名是否正确"; 
+                statusBox.innerHTML = "❌ 加载失败<br>请检查5张图片文件名"; 
             });
 
             window.addEventListener('resize', () => {
@@ -138,7 +217,6 @@
                 const r = data[i*4], g = data[i*4+1], b = data[i*4+2], a = data[i*4+3];
                 if (a > 50) { 
                     const x = i % density, y = Math.floor(i / density);
-                    // 这里的 size 已经是我们手动指定的大小(1.5 ~ 4.3)了
                     const u = (x / density - 0.5) * size;
                     const v = (y / density - 0.5) * size;
                     validPositions.push(u, -v, 0);
@@ -170,9 +248,8 @@
             }));
             systemObj.group.add(systemObj.particles);
             
-            // 层级排序：最大的层放在最底下(Z=0)，最小的层放最上面(Z>0)
-            // 4.3 是最大尺寸，size越小，Z值越大，越靠前
-            systemObj.group.position.z = (4.3 - size) * 0.05; 
+            // 初始Z轴排序
+            systemObj.group.position.z = (6.0 - size) * 0.05; 
             
             return systemObj;
         }
@@ -205,7 +282,6 @@
         function updateSystem(system, time) {
             if (!system.particles) return;
 
-            // 匀速旋转
             system.group.rotation.z -= system.rotationSpeed;
 
             if (currentFactor > 0.8) {
