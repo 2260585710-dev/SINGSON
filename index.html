@@ -1,166 +1,259 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- 引入 A-Frame (3D引擎) -->
-    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <!-- 引入 MindAR (AR识别库) -->
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
-
-    <!-- 手势控制组件逻辑 -->
-    <script>
-      // 注册手势检测组件
-      AFRAME.registerComponent('gesture-handler', {
-        schema: {
-          enabled: { default: true },
-          rotationFactor: { default: 5 },
-          minScale: { default: 0.3 },
-          maxScale: { default: 8 },
-        },
-        init: function () {
-          this.handleScale = this.handleScale.bind(this);
-          this.handleRotation = this.handleRotation.bind(this);
-          this.isVisible = false;
-          this.initialScale = this.el.object3D.scale.clone();
-          this.scaleFactor = 1;
-
-          this.el.sceneEl.addEventListener("markerFound", (e) => {
-            this.isVisible = true;
-          });
-          this.el.sceneEl.addEventListener("markerLost", (e) => {
-            this.isVisible = false;
-          });
-        },
-        update: function () {
-          if (this.data.enabled) {
-            this.el.sceneEl.addEventListener("onefingermove", this.handleRotation);
-            this.el.sceneEl.addEventListener("twofingermove", this.handleScale);
-          } else {
-            this.el.sceneEl.removeEventListener("onefingermove", this.handleRotation);
-            this.el.sceneEl.removeEventListener("twofingermove", this.handleScale);
-          }
-        },
-        handleRotation: function (event) {
-          if (this.isVisible) {
-            this.el.object3D.rotation.y +=
-              event.detail.positionChange.x * this.data.rotationFactor;
-            this.el.object3D.rotation.x +=
-              event.detail.positionChange.y * this.data.rotationFactor;
-          }
-        },
-        handleScale: function (event) {
-          if (this.isVisible) {
-            this.scaleFactor *=
-              1 + event.detail.spreadChange / event.detail.startSpread;
-            this.scaleFactor = Math.min(
-              Math.max(this.scaleFactor, this.data.minScale),
-              this.data.maxScale
-            );
-            this.el.object3D.scale.x = this.scaleFactor * this.initialScale.x;
-            this.el.object3D.scale.y = this.scaleFactor * this.initialScale.y;
-            this.el.object3D.scale.z = this.scaleFactor * this.initialScale.z;
-          }
-        },
-      });
-
-      // 注册手势检测器（监听触摸事件）
-      AFRAME.registerComponent("gesture-detector", {
-        schema: {
-          element: { default: "" }
-        },
-        init: function() {
-          this.targetElement = this.data.element && document.querySelector(this.data.element);
-          if (!this.targetElement) {
-            this.targetElement = this.el;
-          }
-          this.internalState = {
-            previousState: null
-          };
-          this.emitGestureEvent = this.emitGestureEvent.bind(this);
-          this.targetElement.addEventListener("touchstart", this.emitGestureEvent);
-          this.targetElement.addEventListener("touchend", this.emitGestureEvent);
-          this.targetElement.addEventListener("touchmove", this.emitGestureEvent);
-        },
-        emitGestureEvent: function(event) {
-          const currentState = this.getTouchState(event);
-          const previousState = this.internalState.previousState;
-          const gestureContinuousEvents = {
-            1: "onefingermove",
-            2: "twofingermove"
-          };
-          // ... 简化版手势逻辑核心 ...
-          if (previousState && currentState && currentState.touchCount === previousState.touchCount && currentState.touchCount > 0) {
-             const eventDetail = {
-               positionChange: {
-                 x: currentState.position.x - previousState.position.x,
-                 y: currentState.position.y - previousState.position.y
-               }
-             };
-             if (currentState.spread) {
-               eventDetail.spreadChange = currentState.spread - previousState.spread;
-               eventDetail.startSpread = previousState.spread;
-             }
-             if (gestureContinuousEvents[currentState.touchCount]) {
-               this.el.emit(gestureContinuousEvents[currentState.touchCount], eventDetail);
-             }
-          }
-          this.internalState.previousState = currentState;
-        },
-        getTouchState: function(event) {
-          if (event.touches.length === 0) return null;
-          const touchList = [];
-          for (let i = 0; i < event.touches.length; i++) {
-             touchList.push(event.touches[i]);
-          }
-          const touchState = { touchCount: touchList.length };
-          const centerPositionRawX = touchList.reduce((sum, t) => sum + t.clientX, 0) / touchList.length;
-          const centerPositionRawY = touchList.reduce((sum, t) => sum + t.clientY, 0) / touchList.length;
-          touchState.position = { x: centerPositionRawX, y: centerPositionRawY };
-          
-          [...](asc_slot://start-slot-3)if (touchList.length >= 2) {
-            const dx = touchList[0].clientX - touchList[1].clientX;
-            const dy = touchList[0].clientY - touchList[1].clientY;
-            touchState.spread = Math.sqrt(dx * dx + dy * dy);
-          }
-          return touchState;
-        }
-      });
-    </script>
-    
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>AR 五层纹样 (终极版)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
-      body { margin: 0; overflow: hidden; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        #input-video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; transform: scaleX(-1); }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+        #status-box {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            text-align: center; color: white; z-index: 20; pointer-events: none;
+            background: rgba(0,0,0,0.8); padding: 20px; border-radius: 12px;
+            width: 80%; max-width: 300px; font-size: 16px; line-height: 1.5;
+        }
+        #interaction-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 100; background: transparent; display: flex;
+            justify-content: center; align-items: flex-end; padding-bottom: 50px;
+        }
+        #hint-text {
+            color: rgba(255,255,255,0.7); font-size: 14px; 
+            background: rgba(0,0,0,0.3); padding: 8px 15px; border-radius: 20px;
+            pointer-events: none;
+        }
     </style>
-  </head>
-  <body>
-    <!-- AR 场景配置 -->
-    <a-scene 
-      mindar-image="imageTargetSrc: ./targets.mind;" 
-      color-space="sRGB" 
-      renderer="colorManagement: true, physicallyCorrectLights" 
-      vr-mode-ui="enabled: false" 
-      device-orientation-permission-ui="enabled: false"
-      gesture-detector>
-      
-      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+</head>
+<body>
+    <div id="status-box">1. 初始化...</div>
+    <video id="input-video" playsinline></video>
+    <div id="canvas-container"></div>
+    <div id="interaction-layer"><div id="hint-text">👆 点击屏幕开启体验</div></div>
+    <audio id="bgm" loop><source src="bgm.mp3" type="audio/mpeg"></audio>
 
-      <!-- 识别到目标后显示的内容 -->
-      <!-- targetIndex: 0 表示识别 targets.mind 里的第一张图 -->
-      <a-entity mindar-image-target="targetIndex: 0">
+    <script src="https://cdn.staticfile.org/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <script>
+        // === 配置区域：你想加几层就在这里写几行 ===
+        const LAYERS_CONFIG = [
+            { file: 'pattern_inner.png',  speed: 0.005, density: 90,  dispScale: 1.0 }, // 第1层 (最快)
+            { file: 'pattern_outer.png',  speed: 0.004, density: 100, dispScale: 1.2 }, // 第2层
+            { file: 'pattern_outer2.png', speed: 0.003, density: 100, dispScale: 1.4 }, // 第3层
+            { file: 'pattern_outer3.png', speed: 0.002, density: 110, dispScale: 1.6 }, // 第4层
+            { file: 'pattern_outer4.png', speed: 0.001, density: 110, dispScale: 1.8 }  // 第5层 (最慢)
+        ];
         
-        [...](asc_slot://start-slot-5)<!-- 这里是你想显示的AR内容，比如一个平面图片 -->
-        <!-- src 换成你自己的图片文件名，例如 overlay.png -->
-        <!-- gesture-handler 让它支持手势 -->
-        <a-plane 
-          src="./overlay.png" 
-          position="0 0 0" 
-          height="1" 
-          width="1" 
-          rotation="0 0 0" 
-          class="clickable"
-          gesture-handler>
-        </a-plane>
+        // 统一物理尺寸 (因为你的图都是 2000x2000 拼好的)
+        const BASE_SIZE = 3.0; 
 
-      </a-entity>
-    </a-scene>
-  </body>
+        window.onerror = function(msg) {
+            document.getElementById('status-box').innerText = "❌ 错误: " + msg;
+            return false;
+        };
+
+        const statusBox = document.getElementById('status-box');
+        const interactionLayer = document.getElementById('interaction-layer');
+        const bgm = document.getElementById('bgm');
+
+        interactionLayer.addEventListener('click', () => {
+            bgm.play().then(() => { interactionLayer.style.display = 'none'; })
+               .catch(e => { interactionLayer.style.display = 'none'; });
+        });
+
+        let scene, camera, renderer;
+        let systems = []; // 存储所有层级的数组
+        let targetFactor = 0; 
+        let currentFactor = 0;
+
+        window.onload = function() { init(); };
+
+        function init() {
+            statusBox.innerText = "2. 启动 3D 引擎...";
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 3.8; // 五层比较厚，相机拉远一点点
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio > 2 ? 2 : window.devicePixelRatio);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+            
+            statusBox.innerText = "3. 加载 5 层纹样...";
+            const loader = new THREE.TextureLoader();
+            
+            // 动态生成加载任务
+            const loadPromises = LAYERS_CONFIG.map(config => loadTexturePromise(loader, config.file));
+
+            Promise.all(loadPromises).then(textures => {
+                textures.forEach((tex, index) => {
+                    const config = LAYERS_CONFIG[index];
+                    // 创建每一层
+                    const sys = createLayer(tex, BASE_SIZE, config.density, config.dispScale);
+                    // 绑定速度配置
+                    sys.rotationSpeed = config.speed;
+                    // 加入数组管理
+                    systems.push(sys);
+                    scene.add(sys.group);
+                });
+                
+                statusBox.innerText = "4. 启动 AI...";
+                startCamera();
+            }).catch(err => { 
+                statusBox.innerHTML = "❌ 加载失败<br>请检查5张图片文件名是否正确"; 
+            });
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function loadTexturePromise(loader, url) {
+            return new Promise((resolve, reject) => { loader.load(url, resolve, undefined, reject); });
+        }
+
+        function createLayer(texture, size, density, disperseScale) {
+            const systemObj = { group: new THREE.Group(), mesh: null, particles: null, origPos: null, dispPos: null };
+
+            // 实体层
+            const planeGeo = new THREE.PlaneGeometry(size, size);
+            const planeMat = new THREE.MeshBasicMaterial({ 
+                map: texture, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide 
+            });
+            systemObj.mesh = new THREE.Mesh(planeGeo, planeMat);
+            systemObj.group.add(systemObj.mesh);
+
+            // 粒子层
+            const img = texture.image;
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = density; canvas.height = density;
+            ctx.drawImage(img, 0, 0, density, density);
+            const data = ctx.getImageData(0, 0, density, density).data;
+
+            const validPositions = []; const validColors = [];
+            for(let i = 0; i < density * density; i++) {
+                const r = data[i*4], g = data[i*4+1], b = data[i*4+2], a = data[i*4+3];
+                if (a > 50) { 
+                    const x = i % density, y = Math.floor(i / density);
+                    const u = (x / density - 0.5) * size;
+                    const v = (y / density - 0.5) * size;
+                    validPositions.push(u, -v, 0);
+                    validColors.push(r/255*1.2, g/255*1.2, b/255*1.2);
+                }
+            }
+
+            const count = validPositions.length / 3;
+            const geometry = new THREE.BufferGeometry();
+            systemObj.origPos = new Float32Array(validPositions);
+            systemObj.dispPos = new Float32Array(count * 3);
+            const colors = new Float32Array(validColors);
+
+            for(let i = 0; i < count * 3; i+=3) {
+                const r = (0.5 + Math.random() * 2.5) * disperseScale; 
+                const angle = Math.random() * Math.PI * 2; 
+                const h = (Math.random() - 0.5) * 4 * disperseScale; 
+                const twist = h * 2.0; 
+                systemObj.dispPos[i] = r * Math.cos(angle + twist);     
+                systemObj.dispPos[i+1] = h + 1.0;                       
+                systemObj.dispPos[i+2] = r * Math.sin(angle + twist);   
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(systemObj.dispPos.slice(), 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            systemObj.particles = new THREE.Points(geometry, new THREE.PointsMaterial({
+                size: 0.018, vertexColors: true, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false
+            }));
+            systemObj.group.add(systemObj.particles);
+            
+            // Z轴微调防止闪烁
+            systemObj.group.position.z = Math.random() * 0.01; 
+            
+            return systemObj;
+        }
+
+        function startCamera() {
+            const videoElement = document.getElementById('input-video');
+            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+            
+            hands.onResults(results => {
+                if (statusBox.style.display !== 'none') statusBox.style.display = 'none';
+                let newTarget = 0; 
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    const lm = results.multiHandLandmarks[0];
+                    const dist = Math.sqrt(Math.pow(lm[4].x - lm[8].x, 2) + Math.pow(lm[4].y - lm[8].y, 2));
+                    if (dist < 0.05) newTarget = 1; 
+                } 
+                targetFactor = newTarget;
+            });
+
+            const cameraUtils = new Camera(videoElement, {
+                onFrame: async () => { await hands.send({image: videoElement}); },
+                width: 640, height: 480
+            });
+            cameraUtils.start().catch(err => statusBox.innerText = "❌ 摄像头失败: " + err);
+            
+            animate();
+        }
+
+        function updateSystem(system, time) {
+            if (!system.particles) return;
+
+            // 读取绑定的速度进行旋转
+            system.group.rotation.z -= system.rotationSpeed;
+
+            if (currentFactor > 0.8) {
+                let alpha = (currentFactor - 0.8) * 5;
+                if(alpha > 1) alpha = 1;
+                system.mesh.material.opacity = alpha;
+                system.particles.material.opacity = 0.95 * (1 - alpha);
+            } else {
+                system.mesh.material.opacity = 0;
+                system.particles.material.opacity = 0.95;
+            }
+
+            system.particles.material.size = 0.028 - (currentFactor * 0.012);
+            const positions = system.particles.geometry.attributes.position.array;
+            const orig = system.origPos;
+            const disp = system.dispPos;
+
+            for(let i = 0; i < positions.length; i+=3) {
+                const ox = orig[i], oy = orig[i+1]; 
+                let dx = disp[i], dy = disp[i+1], dz = disp[i+2];
+                
+                if (currentFactor < 0.8) {
+                    const rotAngle = time * 0.5; 
+                    const oldDx = dx;
+                    dx = oldDx * Math.cos(rotAngle) - dz * Math.sin(rotAngle);
+                    dz = oldDx * Math.sin(rotAngle) + dz * Math.cos(rotAngle);
+                }
+
+                positions[i] = dx + (ox - dx) * currentFactor;
+                positions[i+1] = dy + (oy - dy) * currentFactor;
+                positions[i+2] = dz + (orig[i+2] - dz) * currentFactor; 
+            }
+            system.particles.geometry.attributes.position.needsUpdate = true;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            currentFactor += (targetFactor - currentFactor) * 0.1;
+            const time = Date.now() * 0.001;
+
+            // 循环更新所有层
+            systems.forEach(sys => updateSystem(sys, time));
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
 </html>
