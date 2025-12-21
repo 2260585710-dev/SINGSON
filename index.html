@@ -2,14 +2,23 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>AR 五层纹样 (可调参版)</title>
+    <title>AR 终极控制台</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
-        #input-video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; transform: scaleX(-1); }
-        #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
         
-        /* 状态提示 */
+        /* 摄像头小窗：右下角 */
+        #input-video {
+            position: absolute; bottom: 20px; right: 20px; 
+            width: 160px; height: 120px; 
+            object-fit: cover; z-index: 100; 
+            transform: scaleX(-1);
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+        }
+
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        
         #status-box {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             text-align: center; color: white; z-index: 20; pointer-events: none;
@@ -17,27 +26,32 @@
             width: 80%; max-width: 300px;
         }
 
-        /* 底部操作层 */
+        /* 音乐提示 */
         #interaction-layer {
-            position: absolute; bottom: 30px; width: 100%; text-align: center; z-index: 100;
+            position: absolute; bottom: 30px; left: 20px; z-index: 100;
         }
         #hint-text {
-            color: rgba(255,255,255,0.8); font-size: 14px; 
+            color: rgba(255,255,255,0.8); font-size: 12px; 
             background: rgba(0,0,0,0.5); padding: 8px 15px; border-radius: 20px;
-            display: inline-block; cursor: pointer;
+            cursor: pointer;
         }
 
-        /* === 新增：左上角控制面板 === */
+        /* 控制面板 */
         #control-panel {
             position: absolute; top: 10px; left: 10px; z-index: 50;
-            background: rgba(0, 0, 0, 0.6); padding: 10px; border-radius: 8px;
-            color: white; font-size: 12px; width: 140px;
+            background: rgba(0, 0, 0, 0.7); padding: 15px; border-radius: 8px;
+            color: white; font-size: 12px; width: 220px;
             backdrop-filter: blur(4px);
+            max-height: 80vh; overflow-y: auto;
         }
-        .control-item { margin-bottom: 8px; }
-        .control-item label { display: block; margin-bottom: 2px; }
+        .layer-group { 
+            border-bottom: 1px solid rgba(255,255,255,0.1); 
+            padding-bottom: 10px; margin-bottom: 10px; 
+        }
+        .control-item { margin-bottom: 5px; }
+        .control-item label { display: flex; justify-content: space-between; margin-bottom: 2px; }
         .control-item input { width: 100%; }
-        /* 隐藏按钮 */
+        
         #toggle-controls {
             position: absolute; top: 10px; right: 10px; z-index: 51;
             background: rgba(255,255,255,0.2); border: none; color: white;
@@ -47,38 +61,22 @@
 </head>
 <body>
     <div id="status-box">1. 初始化...</div>
+    
+    <!-- 摄像头现在是小窗 -->
     <video id="input-video" playsinline></video>
+    
     <div id="canvas-container"></div>
     
     <div id="interaction-layer">
         <div id="hint-text">🎵 点击播放音乐</div>
     </div>
     
-    <!-- 控制面板开关 -->
-    <button id="toggle-controls">🛠️ 调整</button>
+    <button id="toggle-controls">🛠️ 控制台</button>
 
-    <!-- 控制面板 -->
+    <!-- 超级控制面板 -->
     <div id="control-panel">
-        <div class="control-item">
-            <label>第1层大小 (内): <span id="val1">1.5</span></label>
-            <input type="range" id="slider1" min="0.5" max="5.0" step="0.1" value="1.5">
-        </div>
-        <div class="control-item">
-            <label>第2层大小: <span id="val2">2.2</span></label>
-            <input type="range" id="slider2" min="0.5" max="5.0" step="0.1" value="2.2">
-        </div>
-        <div class="control-item">
-            <label>第3层大小: <span id="val3">2.9</span></label>
-            <input type="range" id="slider3" min="0.5" max="5.0" step="0.1" value="2.9">
-        </div>
-        <div class="control-item">
-            <label>第4层大小: <span id="val4">3.6</span></label>
-            <input type="range" id="slider4" min="0.5" max="5.0" step="0.1" value="3.6">
-        </div>
-        <div class="control-item">
-            <label>第5层大小 (外): <span id="val5">4.3</span></label>
-            <input type="range" id="slider5" min="0.5" max="6.0" step="0.1" value="4.3">
-        </div>
+        <h3 style="margin:0 0 10px 0; color:#ffd700;">层级控制器</h3>
+        <!-- 动态生成 5 层控制项 -->
     </div>
 
     <audio id="bgm" loop><source src="bgm.mp3" type="audio/mpeg"></audio>
@@ -92,11 +90,11 @@
     <script>
         // 初始配置
         const LAYERS_CONFIG = [
-            { file: 'pattern_inner.png',  size: 1.5, speed: 0.005, density: 90,  dispScale: 1.0 },
-            { file: 'pattern_outer.png',  size: 2.2, speed: 0.004, density: 100, dispScale: 1.2 },
-            { file: 'pattern_outer2.png', size: 2.9, speed: 0.003, density: 100, dispScale: 1.4 },
-            { file: 'pattern_outer3.png', size: 3.6, speed: 0.002, density: 110, dispScale: 1.6 },
-            { file: 'pattern_outer4.png', size: 4.3, speed: 0.001, density: 110, dispScale: 1.8 }
+            { file: 'pattern_inner.png',  size: 1.5, speed: 0.005, density: 90,  dispScale: 1.0, label: "第1层 (内)" },
+            { file: 'pattern_outer.png',  size: 2.2, speed: 0.004, density: 100, dispScale: 1.2, label: "第2层" },
+            { file: 'pattern_outer2.png', size: 2.9, speed: 0.003, density: 100, dispScale: 1.4, label: "第3层" },
+            { file: 'pattern_outer3.png', size: 3.6, speed: 0.002, density: 110, dispScale: 1.6, label: "第4层" },
+            { file: 'pattern_outer4.png', size: 4.3, speed: 0.001, density: 110, dispScale: 1.8, label: "第5层 (外)" }
         ];
 
         window.onerror = function(msg) {
@@ -110,19 +108,31 @@
         const controlPanel = document.getElementById('control-panel');
         const toggleBtn = document.getElementById('toggle-controls');
 
-        // 音乐播放
+        // 生成控制项
+        LAYERS_CONFIG.forEach((config, index) => {
+            const div = document.createElement('div');
+            div.className = 'layer-group';
+            div.innerHTML = `
+                <div style="font-weight:bold; margin-bottom:5px; color:#aaa;">${config.label}</div>
+                <div class="control-item">
+                    <label>大小: <span id="size-val-${index}">${config.size}</span></label>
+                    <input type="range" id="size-slider-${index}" min="0.5" max="6.0" step="0.1" value="${config.size}">
+                </div>
+                <div class="control-item">
+                    <label>转速: <span id="speed-val-${index}">${config.speed}</span></label>
+                    <input type="range" id="speed-slider-${index}" min="0" max="0.02" step="0.001" value="${config.speed}">
+                </div>
+            `;
+            controlPanel.appendChild(div);
+        });
+
         hintText.addEventListener('click', () => {
             bgm.play().then(() => { hintText.style.display = 'none'; })
                .catch(e => { hintText.innerText = "无音乐文件"; });
         });
 
-        // 切换控制面板显示/隐藏
         toggleBtn.addEventListener('click', () => {
-            if (controlPanel.style.display === 'none') {
-                controlPanel.style.display = 'block';
-            } else {
-                controlPanel.style.display = 'none';
-            }
+            controlPanel.style.display = controlPanel.style.display === 'none' ? 'block' : 'none';
         });
 
         let scene, camera, renderer;
@@ -135,10 +145,13 @@
         function init() {
             statusBox.innerText = "2. 启动 3D 引擎...";
             scene = new THREE.Scene();
+            // 背景设为黑色，因为不需要透视全屏视频了
+            scene.background = new THREE.Color(0x000000);
+
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.z = 4.5; 
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio > 2 ? 2 : window.devicePixelRatio);
             document.getElementById('canvas-container').appendChild(renderer.domElement);
@@ -153,26 +166,28 @@
                     const config = LAYERS_CONFIG[index];
                     const sys = createLayer(tex, config.size, config.density, config.dispScale);
                     sys.rotationSpeed = config.speed;
-                    sys.baseSize = config.size; // 记录初始大小
+                    sys.baseSize = config.size;
                     systems.push(sys);
                     scene.add(sys.group);
 
-                    // === 绑定滑块事件 ===
-                    const slider = document.getElementById(`slider${index+1}`);
-                    const labelSpan = document.getElementById(`val${index+1}`);
-                    
-                    slider.addEventListener('input', (e) => {
+                    // 绑定控制事件
+                    const sizeSlider = document.getElementById(`size-slider-${index}`);
+                    const sizeVal = document.getElementById(`size-val-${index}`);
+                    const speedSlider = document.getElementById(`speed-slider-${index}`);
+                    const speedVal = document.getElementById(`speed-val-${index}`);
+
+                    sizeSlider.addEventListener('input', (e) => {
                         const newSize = parseFloat(e.target.value);
-                        labelSpan.innerText = newSize.toFixed(1);
-                        
-                        // 实时更新这一层的大小
-                        // 因为我们不能直接改 geometry 的大小，所以用 scale 缩放 group
-                        // 初始 geometry 是按 baseSize 建的，现在 scale = newSize / baseSize
+                        sizeVal.innerText = newSize.toFixed(1);
                         const scale = newSize / sys.baseSize;
                         sys.group.scale.set(scale, scale, 1);
-                        
-                        // 更新Z轴排序，避免遮挡
                         sys.group.position.z = (6.0 - newSize) * 0.05;
+                    });
+
+                    speedSlider.addEventListener('input', (e) => {
+                        const newSpeed = parseFloat(e.target.value);
+                        speedVal.innerText = newSpeed.toFixed(3);
+                        sys.rotationSpeed = newSpeed;
                     });
                 });
                 
@@ -194,138 +209,26 @@
         }
 
         function createLayer(texture, size, density, disperseScale) {
-            const systemObj = { group: new THREE.Group(), mesh: null, particles: null, origPos: null, dispPos: null };
+            const systemObj = { group: new THREE.Group(), mesh: null, glow: null, particles: null, origPos: null, dispPos: null };
 
-            // 实体层
+            // === 1. 发光层 (Glow) ===
+            const glowGeo = new THREE.PlaneGeometry(size * 1.1, size * 1.1); // 稍大一圈
+            const glowMat = new THREE.MeshBasicMaterial({ 
+                map: texture, 
+                transparent: true, 
+                opacity: 0, 
+                color: 0xffaa00, // 金色发光
+                blending: THREE.AdditiveBlending, // 叠加模式
+                depthWrite: false,
+                side: THREE.DoubleSide
+            });
+            systemObj.glow = new THREE.Mesh(glowGeo, glowMat);
+            systemObj.glow.position.z = -0.05; // 放在后面
+            systemObj.group.add(systemObj.glow);
+
+            // === 2. 实体图片层 ===
             const planeGeo = new THREE.PlaneGeometry(size, size);
             const planeMat = new THREE.MeshBasicMaterial({ 
                 map: texture, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide 
             });
-            systemObj.mesh = new THREE.Mesh(planeGeo, planeMat);
-            systemObj.group.add(systemObj.mesh);
-
-            // 粒子层
-            const img = texture.image;
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            canvas.width = density; canvas.height = density;
-            ctx.drawImage(img, 0, 0, density, density);
-            const data = ctx.getImageData(0, 0, density, density).data;
-
-            const validPositions = []; const validColors = [];
-            for(let i = 0; i < density * density; i++) {
-                const r = data[i*4], g = data[i*4+1], b = data[i*4+2], a = data[i*4+3];
-                if (a > 50) { 
-                    const x = i % density, y = Math.floor(i / density);
-                    const u = (x / density - 0.5) * size;
-                    const v = (y / density - 0.5) * size;
-                    validPositions.push(u, -v, 0);
-                    validColors.push(r/255*1.2, g/255*1.2, b/255*1.2);
-                }
-            }
-
-            const count = validPositions.length / 3;
-            const geometry = new THREE.BufferGeometry();
-            systemObj.origPos = new Float32Array(validPositions);
-            systemObj.dispPos = new Float32Array(count * 3);
-            const colors = new Float32Array(validColors);
-
-            for(let i = 0; i < count * 3; i+=3) {
-                const r = (0.5 + Math.random() * 2.5) * disperseScale; 
-                const angle = Math.random() * Math.PI * 2; 
-                const h = (Math.random() - 0.5) * 4 * disperseScale; 
-                const twist = h * 2.0; 
-                systemObj.dispPos[i] = r * Math.cos(angle + twist);     
-                systemObj.dispPos[i+1] = h + 1.0;                       
-                systemObj.dispPos[i+2] = r * Math.sin(angle + twist);   
-            }
-
-            geometry.setAttribute('position', new THREE.BufferAttribute(systemObj.dispPos.slice(), 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-            systemObj.particles = new THREE.Points(geometry, new THREE.PointsMaterial({
-                size: 0.018, vertexColors: true, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false
-            }));
-            systemObj.group.add(systemObj.particles);
-            
-            // 初始Z轴排序
-            systemObj.group.position.z = (6.0 - size) * 0.05; 
-            
-            return systemObj;
-        }
-
-        function startCamera() {
-            const videoElement = document.getElementById('input-video');
-            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-            hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-            
-            hands.onResults(results => {
-                if (statusBox.style.display !== 'none') statusBox.style.display = 'none';
-                let newTarget = 0; 
-                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                    const lm = results.multiHandLandmarks[0];
-                    const dist = Math.sqrt(Math.pow(lm[4].x - lm[8].x, 2) + Math.pow(lm[4].y - lm[8].y, 2));
-                    if (dist < 0.05) newTarget = 1; 
-                } 
-                targetFactor = newTarget;
-            });
-
-            const cameraUtils = new Camera(videoElement, {
-                onFrame: async () => { await hands.send({image: videoElement}); },
-                width: 640, height: 480
-            });
-            cameraUtils.start().catch(err => statusBox.innerText = "❌ 摄像头失败: " + err);
-            
-            animate();
-        }
-
-        function updateSystem(system, time) {
-            if (!system.particles) return;
-
-            system.group.rotation.z -= system.rotationSpeed;
-
-            if (currentFactor > 0.8) {
-                let alpha = (currentFactor - 0.8) * 5;
-                if(alpha > 1) alpha = 1;
-                system.mesh.material.opacity = alpha;
-                system.particles.material.opacity = 0.95 * (1 - alpha);
-            } else {
-                system.mesh.material.opacity = 0;
-                system.particles.material.opacity = 0.95;
-            }
-
-            system.particles.material.size = 0.028 - (currentFactor * 0.012);
-            const positions = system.particles.geometry.attributes.position.array;
-            const orig = system.origPos;
-            const disp = system.dispPos;
-
-            for(let i = 0; i < positions.length; i+=3) {
-                const ox = orig[i], oy = orig[i+1]; 
-                let dx = disp[i], dy = disp[i+1], dz = disp[i+2];
-                
-                if (currentFactor < 0.8) {
-                    const rotAngle = time * 0.5; 
-                    const oldDx = dx;
-                    dx = oldDx * Math.cos(rotAngle) - dz * Math.sin(rotAngle);
-                    dz = oldDx * Math.sin(rotAngle) + dz * Math.cos(rotAngle);
-                }
-
-                positions[i] = dx + (ox - dx) * currentFactor;
-                positions[i+1] = dy + (oy - dy) * currentFactor;
-                positions[i+2] = dz + (orig[i+2] - dz) * currentFactor; 
-            }
-            system.particles.geometry.attributes.position.needsUpdate = true;
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            currentFactor += (targetFactor - currentFactor) * 0.1;
-            const time = Date.now() * 0.001;
-
-            systems.forEach(sys => updateSystem(sys, time));
-
-            renderer.render(scene, camera);
-        }
-    </script>
-</body>
-</html>
+            s
