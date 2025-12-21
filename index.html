@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>AR 五层纹样 (终极版)</title>
+    <title>AR 五层完美嵌套版</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
@@ -40,17 +40,14 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
     <script>
-        // === 配置区域：你想加几层就在这里写几行 ===
+        // === 关键修改：手动指定每一层的物理显示大小 ===
         const LAYERS_CONFIG = [
-            { file: 'pattern_inner.png',  speed: 0.005, density: 90,  dispScale: 1.0 }, // 第1层 (最快)
-            { file: 'pattern_outer.png',  speed: 0.004, density: 100, dispScale: 1.2 }, // 第2层
-            { file: 'pattern_outer2.png', speed: 0.003, density: 100, dispScale: 1.4 }, // 第3层
-            { file: 'pattern_outer3.png', speed: 0.002, density: 110, dispScale: 1.6 }, // 第4层
-            { file: 'pattern_outer4.png', speed: 0.001, density: 110, dispScale: 1.8 }  // 第5层 (最慢)
+            { file: 'pattern_inner.png',  size: 1.5, speed: 0.005, density: 90,  dispScale: 1.0 }, // 第1层：最小
+            { file: 'pattern_outer.png',  size: 2.2, speed: 0.004, density: 100, dispScale: 1.2 }, // 第2层：大一圈
+            { file: 'pattern_outer2.png', size: 2.9, speed: 0.003, density: 100, dispScale: 1.4 }, // 第3层：再大一圈
+            { file: 'pattern_outer3.png', size: 3.6, speed: 0.002, density: 110, dispScale: 1.6 }, // 第4层
+            { file: 'pattern_outer4.png', size: 4.3, speed: 0.001, density: 110, dispScale: 1.8 }  // 第5层：最大
         ];
-        
-        // 统一物理尺寸 (因为你的图都是 2000x2000 拼好的)
-        const BASE_SIZE = 3.0; 
 
         window.onerror = function(msg) {
             document.getElementById('status-box').innerText = "❌ 错误: " + msg;
@@ -67,7 +64,7 @@
         });
 
         let scene, camera, renderer;
-        let systems = []; // 存储所有层级的数组
+        let systems = []; 
         let targetFactor = 0; 
         let currentFactor = 0;
 
@@ -76,8 +73,9 @@
         function init() {
             statusBox.innerText = "2. 启动 3D 引擎...";
             scene = new THREE.Scene();
+            // 相机再拉远一点，因为第5层(4.3)非常大，需要更广的视野
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 3.8; // 五层比较厚，相机拉远一点点
+            camera.position.z = 4.5; 
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -87,17 +85,14 @@
             statusBox.innerText = "3. 加载 5 层纹样...";
             const loader = new THREE.TextureLoader();
             
-            // 动态生成加载任务
             const loadPromises = LAYERS_CONFIG.map(config => loadTexturePromise(loader, config.file));
 
             Promise.all(loadPromises).then(textures => {
                 textures.forEach((tex, index) => {
                     const config = LAYERS_CONFIG[index];
-                    // 创建每一层
-                    const sys = createLayer(tex, BASE_SIZE, config.density, config.dispScale);
-                    // 绑定速度配置
+                    // 使用配置里的 size 参数
+                    const sys = createLayer(tex, config.size, config.density, config.dispScale);
                     sys.rotationSpeed = config.speed;
-                    // 加入数组管理
                     systems.push(sys);
                     scene.add(sys.group);
                 });
@@ -143,6 +138,7 @@
                 const r = data[i*4], g = data[i*4+1], b = data[i*4+2], a = data[i*4+3];
                 if (a > 50) { 
                     const x = i % density, y = Math.floor(i / density);
+                    // 这里的 size 已经是我们手动指定的大小(1.5 ~ 4.3)了
                     const u = (x / density - 0.5) * size;
                     const v = (y / density - 0.5) * size;
                     validPositions.push(u, -v, 0);
@@ -174,8 +170,9 @@
             }));
             systemObj.group.add(systemObj.particles);
             
-            // Z轴微调防止闪烁
-            systemObj.group.position.z = Math.random() * 0.01; 
+            // 层级排序：最大的层放在最底下(Z=0)，最小的层放最上面(Z>0)
+            // 4.3 是最大尺寸，size越小，Z值越大，越靠前
+            systemObj.group.position.z = (4.3 - size) * 0.05; 
             
             return systemObj;
         }
@@ -208,7 +205,7 @@
         function updateSystem(system, time) {
             if (!system.particles) return;
 
-            // 读取绑定的速度进行旋转
+            // 匀速旋转
             system.group.rotation.z -= system.rotationSpeed;
 
             if (currentFactor > 0.8) {
@@ -249,7 +246,6 @@
             currentFactor += (targetFactor - currentFactor) * 0.1;
             const time = Date.now() * 0.001;
 
-            // 循环更新所有层
             systems.forEach(sys => updateSystem(sys, time));
 
             renderer.render(scene, camera);
